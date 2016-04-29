@@ -60,6 +60,8 @@ class MavServer
     boost::thread t;
     boost::mutex data_to_send_access_mtx;
     boost::mutex svar_access_mtx;
+    boost::mutex attitude_svar_access_mtx;
+    boost::mutex local_pos_ned_svar_access_mtx;
     udp::endpoint sender_endpoint;
     boost::asio::io_service io_service;
     udp::socket socket;

@@ -70,10 +70,10 @@ mavlink_gps_raw_int_t MavServer::get_svar_gps_raw_int()
 
 mavlink_attitude_t MavServer::get_svar_attitude()
 {
-    svar_access_mtx.lock();
+    attitude_svar_access_mtx.lock();
     mavlink_attitude_t attitude_copy = attitude;
     attitude_isnew = false;
-    svar_access_mtx.unlock();
+    attitude_svar_access_mtx.unlock();
     return attitude_copy;
 }
 
@@ -89,10 +89,10 @@ mavlink_heartbeat_t MavServer::get_svar_heartbeat()
 mavlink_local_position_ned_t MavServer::get_svar_local_pos_ned()
 {
 
-    svar_access_mtx.lock();
+    local_pos_ned_svar_access_mtx.lock();
     mavlink_local_position_ned_t local_pos_int_copy = local_pos_ned;
     local_pos_ned_isnew = false;
-    svar_access_mtx.unlock();
+    local_pos_ned_svar_access_mtx.unlock();
     return local_pos_int_copy;
 }
 
@@ -107,7 +107,8 @@ mavlink_global_position_int_t MavServer::get_svar_global_pos_int()
 }
 
 MavServer::MavServer(short port)
-    : svar_access_mtx(), io_service(),
+    : data_to_send_access_mtx(), svar_access_mtx(), attitude_svar_access_mtx(),
+      local_pos_ned_svar_access_mtx(), io_service(),
       socket(io_service, udp::endpoint(udp::v4(), port))
 {
     data_to_send_len = 0;
@@ -162,44 +163,62 @@ mavlink_mission_item_t MavServer::pose_to_waypoint_relative_alt(double x,
 void MavServer::handle_message(const mavlink_message_t *msg)
 {
 
-    svar_access_mtx.lock();
-
     static uint32_t prev_time_att = 0;
     static uint32_t prev_time_pos = 0;
+    static uint32_t prev_time_local_pos = 0;
 
     switch (msg->msgid) {
     case MAVLINK_MSG_ID_HOME_POSITION: {
+        svar_access_mtx.lock();
         mavlink_msg_home_position_decode(msg, &home_position);
         home_position_isnew = true;
+        svar_access_mtx.unlock();
         break;
     }
     case MAVLINK_MSG_ID_COMMAND_ACK:
+        svar_access_mtx.lock();
         mavlink_msg_command_ack_decode(msg, &command_ack);
         command_ack_isnew = true;
+        svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_GPS_RAW_INT:
+        svar_access_mtx.lock();
         mavlink_msg_gps_raw_int_decode(msg, &gps_raw_int);
         gps_raw_int_isnew = true;
+        svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_HEARTBEAT:
+        svar_access_mtx.lock();
         mavlink_msg_heartbeat_decode(msg, &heartbeat);
         heartbeat_isnew = true;
+        svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_LOCAL_POSITION_NED:
+        local_pos_ned_svar_access_mtx.lock();
         mavlink_msg_local_position_ned_decode(msg, &local_pos_ned);
         local_pos_ned_isnew = true;
+        if (DEBUG_MAVLINK) {
+            std::cout << "locpos_msg_time = "
+                      << local_pos_ned.time_boot_ms - prev_time_local_pos
+                      << std::endl;
+            prev_time_local_pos = local_pos_ned.time_boot_ms;
+        }
+        local_pos_ned_svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
+        svar_access_mtx.lock();
         mavlink_msg_global_position_int_decode(msg, &global_pos_int);
         global_pos_int_isnew = true;
+        svar_access_mtx.unlock();
         if (DEBUG_MAVLINK) {
-            std::cout << "pos_msg_time = "
+            std::cout << "globpos_msg_time = "
                       << global_pos_int.time_boot_ms - prev_time_pos
                       << std::endl;
             prev_time_pos = global_pos_int.time_boot_ms;
         }
         break;
     case MAVLINK_MSG_ID_ATTITUDE:
+        attitude_svar_access_mtx.lock();
         mavlink_msg_attitude_decode(msg, &attitude);
         attitude_isnew = true;
         if (DEBUG_MAVLINK) {
@@ -207,12 +226,11 @@ void MavServer::handle_message(const mavlink_message_t *msg)
                       << attitude.time_boot_ms - prev_time_att << std::endl;
             prev_time_att = attitude.time_boot_ms;
         }
+        attitude_svar_access_mtx.unlock();
         break;
     default:
         break;
     }
-
-    svar_access_mtx.unlock();
 }
 
 bool MavServer::recv_home_position_wait(mavlink_home_position_t *home_position)
