@@ -1,42 +1,52 @@
 #ifndef _DRONE_CAMERA_PLUGIN_HH_
 #define _DRONE_CAMERA_PLUGIN_HH_
 
-#include <string>
-#include <vector>
-#include <stdio.h>
+#include <thread>
+#include <mutex>
 #include <mavlink.h>
-#include <boost/bind.hpp>
-#include <boost/asio.hpp>
+#include <sys/socket.h>
 #include <mavlink_types.h>
-#include <boost/array.hpp>
-#include <boost/thread.hpp>
 #include <gazebo/gazebo.hh>
-#include <gazebo/msgs/msgs.hh>
-#include <boost/shared_ptr.hpp>
 #include <gazebo/common/common.hh>
 #include <gazebo/physics/physics.hh>
-#include <gazebo/transport/transport.hh>
 
-using boost::asio::ip::udp;
+#if DEBUG_MAVLINK
+#define print_debug_mav(...) printf(__VA_ARGS__)
+#else
+#define print_debug_mav(...)                                                   \
+    do {                                                                       \
+    } while (0)
+#endif
+
+#if DEBUG_STATE
+#define print_debug_state(...) printf(__VA_ARGS__)
+#else
+#define print_debug_state(...)                                                 \
+    do {                                                                       \
+    } while (0)
+#endif
+
 class MavServer
 {
   public:
     MavServer(short port);
+    virtual ~MavServer();
 
     // Helpers
     void run();
-    bool target_is_flight_ready();
     int target_get_status();
+    bool target_is_flight_ready();
 
     // Messages
     bool set_mode_guided();
+    bool heartbeat_is_time_to_send();
+    void heartbeat_prepare_to_send();
     bool request_takeoff(float init_alt);
     bool command_long_ack_wait(int mav_cmd, int *cmd_result);
     void data_prepare_to_send(const uint8_t *data, int data_len);
     void command_long_prepare_to_send(mavlink_command_long_t mav_cmd);
-    bool recv_home_position_wait(mavlink_home_position_t *home_position);
     void guided_goto_prepare_to_send(mavlink_mission_item_t mav_waypoint);
-    bool request_home_position_wait(mavlink_global_position_int_t *home_pos);
+    void request_home_position(mavlink_global_position_int_t *home_pos);
     mavlink_mission_item_t pose_to_waypoint_relative_alt(double x, double y,
                                                          double z, double yaw);
     // State Variables
@@ -57,26 +67,28 @@ class MavServer
 
   private:
     // Helpers
-    boost::thread t;
-    boost::mutex data_to_send_access_mtx;
-    boost::mutex svar_access_mtx;
-    boost::mutex attitude_svar_access_mtx;
-    boost::mutex local_pos_ned_svar_access_mtx;
-    udp::endpoint sender_endpoint;
-    boost::asio::io_service io_service;
-    udp::socket socket;
+    std::thread send_receive_thread;
+    bool send_receive_thread_run;
+    std::mutex svar_access_mtx;
+    std::mutex data_to_send_access_mtx;
+    std::mutex attitude_svar_access_mtx;
+    std::mutex local_pos_ned_svar_access_mtx;
 
     // Transport
     int data_to_send_len;
-    enum { max_len = 1024 };
-    uint8_t data_recv[max_len];
-    uint8_t data_to_send[max_len];
-    
+    enum { BUFFER_LEN = 2041 };
+    uint8_t data_recv[BUFFER_LEN];
+    uint8_t data_to_send[BUFFER_LEN];
+
+    static int sock;
+    socklen_t fromlen;
+    static struct sockaddr_in local_addr;
+    static struct sockaddr_in remote_addr;
+
     void send_receive();
+    void handle_send();
+    void handle_receive();
     void handle_message(const mavlink_message_t *msg);
-    void handle_send(const boost::system::error_code &error, size_t bytes_sent);
-    void handle_receive(const boost::system::error_code &error,
-                        size_t bytes_recvd);
 
     // State Variables
     mavlink_attitude_t attitude;
@@ -91,13 +103,12 @@ class MavServer
 namespace gazebo
 {
 
-enum set_pose_u { ANGLES, POSITION };
-
 class GAZEBO_VISIBLE DroneCameraPlugin : public ModelPlugin
 {
 
   public:
     DroneCameraPlugin();
+    virtual ~DroneCameraPlugin();
 
     bool target_has_takenoff();
     void set_global_pos_coord_system(mavlink_global_position_int_t position);
@@ -109,24 +120,22 @@ class GAZEBO_VISIBLE DroneCameraPlugin : public ModelPlugin
         INIT_ON_GROUND,
         INIT_AIRBORNE,
         ACTIVE_AIRBORNE,
-        ACTIVE_GROUND,
+        ACTIVE_ON_GROUND,
         ERROR
     };
 
     int simstate;
     MavServer mavserver;
-    physics::Link_V links;
     physics::ModelPtr model;
     physics::ModelPtr target;
-    physics::JointPtr joint;
     event::ConnectionPtr update_connection;
     mavlink_global_position_int_t init_global_pos;
     common::SphericalCoordinates global_pos_coord_system;
-    
+
     void OnUpdate();
     bool init_global_pos_is_ready();
-    void OnMsg_angles(ConstVector3dPtr &_msg);
-    void OnMsg_position(ConstVector3dPtr &_msg);
+    mavlink_global_position_int_t
+    home_pos_to_global(mavlink_home_position_t home);
     math::Pose coord_gzlocal_to_mavlocal(math::Pose gzpose);
     void calculate_pose(math::Pose *pose, mavlink_attitude_t attitude,
                         mavlink_local_position_ned_t local_position);
