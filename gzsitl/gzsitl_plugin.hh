@@ -10,22 +10,6 @@
 #include <gazebo/common/common.hh>
 #include <gazebo/physics/physics.hh>
 
-#if DEBUG_MAVLINK
-#define print_debug_mav(...) printf(__VA_ARGS__)
-#else
-#define print_debug_mav(...)                                                   \
-    do {                                                                       \
-    } while (0)
-#endif
-
-#if DEBUG_STATE
-#define print_debug_state(...) printf(__VA_ARGS__)
-#else
-#define print_debug_state(...)                                                 \
-    do {                                                                       \
-    } while (0)
-#endif
-
 class MavServer
 {
   public:
@@ -34,21 +18,23 @@ class MavServer
 
     // Helpers
     void run();
-    int target_get_status();
-    bool target_is_flight_ready();
-
-    // Messages
-    bool set_mode_guided();
     bool heartbeat_is_time_to_send();
-    void heartbeat_prepare_to_send();
-    bool request_takeoff(float init_alt);
-    bool command_long_ack_wait(int mav_cmd, int *cmd_result);
-    void data_prepare_to_send(const uint8_t *data, int data_len);
-    void command_long_prepare_to_send(mavlink_command_long_t mav_cmd);
-    void guided_goto_prepare_to_send(mavlink_mission_item_t mav_waypoint);
-    void request_home_position(mavlink_global_position_int_t *home_pos);
     mavlink_mission_item_t pose_to_waypoint_relative_alt(double x, double y,
                                                          double z, double yaw);
+
+    // Vehicle Communication
+    bool vehicle_is_ready();
+    int vehicle_get_status();
+    bool vehicle_set_mode_guided();
+    void vehicle_send_our_heartbeat();
+    void vehicle_send_data(const uint8_t *data, int data_len);
+    void vehicle_send_cmd_long(mavlink_command_long_t mav_cmd);
+    void vehicle_send_waypoint(mavlink_mission_item_t mav_waypoint);
+    bool vehicle_cmd_long_ack_recvd(int mav_cmd_id, int mav_result_expected);
+    bool vehicle_send_cmd_long_until_ack(int cmd, float p1, float p2, float p3,
+                                         float p4, float p5, float p6, float p7,
+                                         int timeout);
+
     // State Variables
     bool attitude_isnew;
     bool heartbeat_isnew;
@@ -66,28 +52,29 @@ class MavServer
     mavlink_global_position_int_t get_svar_global_pos_int();
 
   private:
-    // Helpers
-    std::thread send_receive_thread;
-    bool send_receive_thread_run;
+    // Threading
+    bool send_recv_thread_run;
+    std::thread send_recv_thread;
+
     std::mutex svar_access_mtx;
     std::mutex data_to_send_access_mtx;
     std::mutex attitude_svar_access_mtx;
     std::mutex local_pos_ned_svar_access_mtx;
 
-    // Transport
+    // Vehicle Communication
+    int sock;
+    socklen_t fromlen;
+    struct sockaddr_in local_addr;
+    struct sockaddr_in remote_addr;
+
     int data_to_send_len;
     enum { BUFFER_LEN = 2041 };
     uint8_t data_recv[BUFFER_LEN];
     uint8_t data_to_send[BUFFER_LEN];
 
-    static int sock;
-    socklen_t fromlen;
-    static struct sockaddr_in local_addr;
-    static struct sockaddr_in remote_addr;
-
-    void send_receive();
+    void send_recv();
     void handle_send();
-    void handle_receive();
+    void handle_recv();
     void handle_message(const mavlink_message_t *msg);
 
     // State Variables
@@ -110,11 +97,12 @@ class GAZEBO_VISIBLE DroneCameraPlugin : public ModelPlugin
     DroneCameraPlugin();
     virtual ~DroneCameraPlugin();
 
-    bool target_has_takenoff();
-    void set_global_pos_coord_system(mavlink_global_position_int_t position);
+    void OnUpdate();
     virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
 
   private:
+    // Simulation State
+    int simstate;
     enum sim_state {
         INIT,
         INIT_ON_GROUND,
@@ -124,21 +112,28 @@ class GAZEBO_VISIBLE DroneCameraPlugin : public ModelPlugin
         ERROR
     };
 
-    int simstate;
-    MavServer mavserver;
-    physics::ModelPtr model;
-    physics::ModelPtr target;
-    event::ConnectionPtr update_connection;
+    // Vehicle Status
+    bool vehicle_is_flying();
+    bool vehicle_ground_pos_locked();
+
+    // Coordinates
     mavlink_global_position_int_t init_global_pos;
     common::SphericalCoordinates global_pos_coord_system;
 
-    void OnUpdate();
-    bool init_global_pos_is_ready();
     mavlink_global_position_int_t
     home_pos_to_global(mavlink_home_position_t home);
     math::Pose coord_gzlocal_to_mavlocal(math::Pose gzpose);
+    void set_global_pos_coord_system(mavlink_global_position_int_t position);
     void calculate_pose(math::Pose *pose, mavlink_attitude_t attitude,
                         mavlink_local_position_ned_t local_position);
+
+    // Mavlink
+    MavServer mavserver;
+
+    // Gazebo
+    physics::ModelPtr model;
+    physics::ModelPtr target;
+    event::ConnectionPtr update_connection;
 };
 }
 
