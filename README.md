@@ -21,16 +21,7 @@ Create a build folder and make using CMAKE as follows:
     cd gzsitl/build
     cmake ..
     make
-
-Export the build folder so that Gazebo finds the plugin:
-
-    cd ./gzsitl/build
-    export GAZEBO_PLUGIN_PATH=${GAZEBO_PLUGIN_PATH}:${pwd}
-
-Also export the models folder:
-    
-    cd ./models
-    export GAZEBO_MODEL_PATH=${GAZEBO_MODEL_PATH}:${pwd}
+    cd -
 
 Gazebo automatically searches and downloads models referenced in the .world file that are
 not already present in ~/.gazebo/models or in GAZEBO_MODEL_PATH. However, in some cases
@@ -41,11 +32,11 @@ manually with:
 
 ## Run ##
 
-Run Ardupilot:
+Open a second terminal and run Ardupilot:
 
-    ARDUPILOTDIR/build/sitl/bin/arducopter-quad --model x
+    ${ARDUPILOTDIR}/build/sitl/bin/arducopter-quad --model x
 
-Run Mavproxy:
+In a third terminal, run Mavproxy:
 
     mavproxy.py --master tcp:127.0.0.1:5760 --out udp:127.0.0.1:14550 --out udp:127.0.0.1:14556 --streamrate -1
 
@@ -53,9 +44,9 @@ Load the Parameters on Mavproxy Prompt:
 
     param load ./parameters/gzsitl.parm
 
-Run gzsitl_drone_world in Gazebo:
+Set environment variables and open the Gazebo gzsitl_drone_target world file with the following command:
 
-    gazebo ./world/gzsitl_drone_target.world
+    GAZEBO_PLUGIN_PATH=${GAZEBO_PLUGIN_PATH}:${PWD}/gzsitl/build GAZEBO_MODEL_PATH=${GAZEBO_MODEL_PATH}:${PWD}/models gazebo ./world/gzsitl_drone_target.world
 
 ## Interaction ##
 

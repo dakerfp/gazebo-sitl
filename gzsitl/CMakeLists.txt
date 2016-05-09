@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 # Generate Mavlink Messages
 if(NOT EXISTS ${CMAKE_SOURCE_DIR}/build/lib/)
     execute_process(
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/mavlink
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/../modules/mavlink
             COMMAND
             python
             -m pymavlink.tools.mavgen

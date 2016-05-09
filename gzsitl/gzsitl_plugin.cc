@@ -1,6 +1,22 @@
+/*
+// Copyright (c) 2016 Intel Corporation 
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+*/
+
 #include "gzsitl_plugin.hh"
 
-// TODO: Put these definitions somewhere else.
+// TODO: Set as .sdf plugin parameters 
 #define DEBUG_STATE true
 #define DEBUG_MAVLINK false
 #define GZSITL_TARGET_MODEL_NAME "gzsitl_target"
@@ -37,28 +53,8 @@
 #endif
 
 MavServer::MavServer(short port)
-    : svar_access_mtx(), data_to_send_access_mtx(), attitude_svar_access_mtx(),
-      local_pos_ned_svar_access_mtx()
 {
-    data_to_send_len = 0;
-
-    // State Variables Initialization
-    home_position = {0};
-    command_ack = {0};
-    gps_raw_int = {0};
-    heartbeat = {0};
-    local_pos_ned = {0};
-    global_pos_int = {0};
-    attitude = {0};
-
-    home_position_isnew = false;
-    command_ack_isnew = false;
-    gps_raw_int_isnew = false;
-    heartbeat_isnew = false;
-    local_pos_ned_isnew = false;
-    global_pos_int_isnew = false;
-    attitude_isnew = false;
-
+    
     // Socket Initialization
     sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     memset(&local_addr, 0, sizeof(local_addr));
@@ -66,8 +62,7 @@ MavServer::MavServer(short port)
     local_addr.sin_addr.s_addr = INADDR_ANY;
     local_addr.sin_port = htons(port);
 
-    if (-1 ==
-        bind(sock, (struct sockaddr *)&local_addr, sizeof(struct sockaddr))) {
+    if (bind(sock, (struct sockaddr *)&local_addr, sizeof(struct sockaddr)) == -1) {
         perror("error bind failed");
         close(sock);
         exit(EXIT_FAILURE);
@@ -87,7 +82,6 @@ MavServer::MavServer(short port)
 
 MavServer::~MavServer()
 {
-    send_recv_thread_run = false;
     send_recv_thread.join();
     close(sock);
 }
@@ -99,26 +93,26 @@ void MavServer::run()
     send_recv_thread.detach();
 }
 
-bool MavServer::heartbeat_is_time_to_send()
+bool MavServer::is_time_to_send_heartbeat()
 {
-    static std::chrono::time_point<std::chrono::system_clock> last_hb_sendtime =
-        std::chrono::system_clock::now();
+    using namespace std::chrono;
+    
+    static time_point<system_clock> last_hb_sendtime = system_clock::now();
 
-    int time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           std::chrono::system_clock::now() - last_hb_sendtime)
-                           .count();
+    int time_elapsed =
+        duration_cast<milliseconds>(system_clock::now() - last_hb_sendtime)
+            .count();
+
     if (time_elapsed > HEARTBEAT_SEND_INTERVAL_MS) {
-        last_hb_sendtime = std::chrono::system_clock::now();
+        last_hb_sendtime = system_clock::now();
         return true;
     }
 
     return false;
 }
 
-mavlink_mission_item_t MavServer::pose_to_waypoint_relative_alt(double x,
-                                                                double y,
-                                                                double z,
-                                                                double yaw)
+mavlink_mission_item_t
+MavServer::pose_to_waypoint_relative_alt(double x, double y, double z, double yaw)
 {
     mavlink_mission_item_t mav_waypoint;
 
@@ -160,17 +154,17 @@ int MavServer::vehicle_get_status()
 
 bool MavServer::vehicle_set_mode_guided()
 {
+    using namespace std::chrono;
+
     mavlink_set_mode_t mav_cmd_set_mode;
     mavlink_message_t mav_msg;
     static uint8_t mav_data_buffer[BUFFER_LEN];
 
-    static std::chrono::time_point<std::chrono::system_clock> send_time =
-        std::chrono::system_clock::from_time_t(0);
+    static time_point<system_clock> send_time = system_clock::from_time_t(0);
 
     // Send command to change mode to Guided
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - send_time)
-            .count() > MODE_SET_REQUEST_INTERVAL_MS) {
+    if (duration_cast<milliseconds>(system_clock::now() - send_time).count() >
+        MODE_SET_REQUEST_INTERVAL_MS) {
         mav_cmd_set_mode.target_system = DEFAULT_TARGET_COMPONENT_ID;
 
         // Arducopter does not use the standard MAV_MODE_FLAG. It uses
@@ -185,7 +179,7 @@ bool MavServer::vehicle_set_mode_guided()
         int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
         vehicle_send_data(mav_data_buffer, n);
 
-        send_time = std::chrono::system_clock::now();
+        send_time = system_clock::now();
     }
 
     // Check if mode has changed and ACK has been received
@@ -267,13 +261,15 @@ void MavServer::vehicle_send_waypoint(mavlink_mission_item_t mav_waypoint)
 bool MavServer::vehicle_cmd_long_ack_recvd(int mav_cmd_id,
                                            int mav_result_expected)
 {
-    if (command_ack_isnew) {
-        mavlink_command_ack_t cmd_ack = get_svar_command_ack();
+    if (!is_new_command_ack) {
+        return false;
+    }
 
-        if (cmd_ack.command == mav_cmd_id &&
-            cmd_ack.result == mav_result_expected) {
-            return true;
-        }
+    mavlink_command_ack_t cmd_ack = get_svar_command_ack();
+
+    if (cmd_ack.command == mav_cmd_id &&
+        cmd_ack.result == mav_result_expected) {
+        return true;
     }
 
     return false;
@@ -283,14 +279,14 @@ bool MavServer::vehicle_send_cmd_long_until_ack(int cmd, float p1, float p2,
                                                 float p3, float p4, float p5,
                                                 float p6, float p7, int timeout)
 {
+    using namespace std::chrono;
+
     mavlink_command_long_t mav_cmd;
 
-    static std::unordered_map<
-        int, std::chrono::time_point<std::chrono::system_clock>> send_time = {};
+    static std::unordered_map<int, time_point<system_clock>> send_time = {};
 
     if (!send_time.count(cmd) ||
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now() - send_time[cmd])
+        duration_cast<milliseconds>(system_clock::now() - send_time[cmd])
                 .count() > timeout) {
 
         mav_cmd.target_system = DEFAULT_TARGET_SYSTEM_ID;
@@ -306,7 +302,7 @@ bool MavServer::vehicle_send_cmd_long_until_ack(int cmd, float p1, float p2,
         mav_cmd.param7 = p7;
 
         vehicle_send_cmd_long(mav_cmd);
-        send_time[cmd] = std::chrono::system_clock::now();
+        send_time[cmd] = system_clock::now();
     }
 
     if (vehicle_cmd_long_ack_recvd(cmd, MAV_RESULT_ACCEPTED)) {
@@ -320,7 +316,7 @@ mavlink_attitude_t MavServer::get_svar_attitude()
 {
     attitude_svar_access_mtx.lock();
     mavlink_attitude_t attitude_copy = attitude;
-    attitude_isnew = false;
+    is_new_attitude = false;
     attitude_svar_access_mtx.unlock();
     return attitude_copy;
 }
@@ -329,7 +325,7 @@ mavlink_heartbeat_t MavServer::get_svar_heartbeat()
 {
     svar_access_mtx.lock();
     mavlink_heartbeat_t heartbeat_copy = heartbeat;
-    heartbeat_isnew = false;
+    is_new_heartbeat = false;
     svar_access_mtx.unlock();
     return heartbeat_copy;
 }
@@ -338,7 +334,7 @@ mavlink_command_ack_t MavServer::get_svar_command_ack()
 {
     svar_access_mtx.lock();
     mavlink_command_ack_t command_ack_copy = command_ack;
-    command_ack_isnew = false;
+    is_new_command_ack = false;
     svar_access_mtx.unlock();
     return command_ack_copy;
 }
@@ -347,7 +343,7 @@ mavlink_gps_raw_int_t MavServer::get_svar_gps_raw_int()
 {
     svar_access_mtx.lock();
     mavlink_gps_raw_int_t gps_raw_int_copy = gps_raw_int;
-    gps_raw_int_isnew = false;
+    is_new_gps_raw_int = false;
     svar_access_mtx.unlock();
     return gps_raw_int_copy;
 }
@@ -356,7 +352,7 @@ mavlink_home_position_t MavServer::get_svar_home_position()
 {
     svar_access_mtx.lock();
     mavlink_home_position_t home_position_copy = home_position;
-    home_position_isnew = false;
+    is_new_home_position = false;
     svar_access_mtx.unlock();
     return home_position_copy;
 }
@@ -366,7 +362,7 @@ mavlink_local_position_ned_t MavServer::get_svar_local_pos_ned()
 
     local_pos_ned_svar_access_mtx.lock();
     mavlink_local_position_ned_t local_pos_int_copy = local_pos_ned;
-    local_pos_ned_isnew = false;
+    is_new_local_pos_ned = false;
     local_pos_ned_svar_access_mtx.unlock();
     return local_pos_int_copy;
 }
@@ -376,7 +372,7 @@ mavlink_global_position_int_t MavServer::get_svar_global_pos_int()
 
     svar_access_mtx.lock();
     mavlink_global_position_int_t global_pos_int_copy = global_pos_int;
-    global_pos_int_isnew = false;
+    is_new_global_pos_int = false;
     svar_access_mtx.unlock();
     return global_pos_int_copy;
 }
@@ -410,21 +406,26 @@ void MavServer::handle_recv()
     ssize_t bytes_recvd = recvfrom(sock, (void *)data_recv, BUFFER_LEN, 0,
                                    (struct sockaddr *)&remote_addr, &fromlen);
 
-    if (bytes_recvd > 0) {
-        print_debug_mav("Bytes Received: %d\nDatagram: ", (int)bytes_recvd);
-        for (unsigned int i = 0; i < bytes_recvd; ++i) {
-            print_debug_mav("%02x ", (unsigned char)data_recv[i]);
-            if (mavlink_parse_char(MAVLINK_COMM_0, data_recv[i], &msg,
-                                   &status)) {
-                print_debug_mav("\nReceived packet: CHK: %d, MGC: %d, SYS: %d, "
-                                "COMP: %d, LEN: %d, MSG ID: %d, SEQ: %d\n",
-                                msg.checksum, msg.magic, msg.sysid, msg.compid,
-                                msg.len, msg.msgid, msg.seq);
-                handle_message(&msg);
-            }
-        }
-        print_debug_mav("\n");
+    if(bytes_recvd <= 0) {
+        return;
     }
+
+    print_debug_mav("Bytes Received: %d\nDatagram: ", (int)bytes_recvd);
+  
+    for (unsigned int i = 0; i < bytes_recvd; ++i) {
+        print_debug_mav("%02x ", (unsigned char)data_recv[i]);
+        
+        if (mavlink_parse_char(MAVLINK_COMM_0, data_recv[i], &msg, &status)) {
+            print_debug_mav("\nReceived packet: CHK: %d, MGC: %d, SYS: %d, "
+                            "COMP: %d, LEN: %d, MSG ID: %d, SEQ: %d\n",
+                            msg.checksum, msg.magic, msg.sysid, msg.compid,
+                            msg.len, msg.msgid, msg.seq);
+            handle_message(&msg);
+        }
+    }
+   
+    print_debug_mav("\n");
+    
     memset(data_recv, 0, BUFFER_LEN);
 }
 
@@ -440,32 +441,32 @@ void MavServer::handle_message(const mavlink_message_t *msg)
     case MAVLINK_MSG_ID_HOME_POSITION: {
         svar_access_mtx.lock();
         mavlink_msg_home_position_decode(msg, &home_position);
-        home_position_isnew = true;
+        is_new_home_position = true;
         svar_access_mtx.unlock();
         break;
     }
     case MAVLINK_MSG_ID_COMMAND_ACK:
         svar_access_mtx.lock();
         mavlink_msg_command_ack_decode(msg, &command_ack);
-        command_ack_isnew = true;
+        is_new_command_ack = true;
         svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_GPS_RAW_INT:
         svar_access_mtx.lock();
         mavlink_msg_gps_raw_int_decode(msg, &gps_raw_int);
-        gps_raw_int_isnew = true;
+        is_new_gps_raw_int = true;
         svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_HEARTBEAT:
         svar_access_mtx.lock();
         mavlink_msg_heartbeat_decode(msg, &heartbeat);
-        heartbeat_isnew = true;
+        is_new_heartbeat = true;
         svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_LOCAL_POSITION_NED:
         local_pos_ned_svar_access_mtx.lock();
         mavlink_msg_local_position_ned_decode(msg, &local_pos_ned);
-        local_pos_ned_isnew = true;
+        is_new_local_pos_ned = true;
         print_debug_mav("locpos_msg_time = %d\n",
                         local_pos_ned.time_boot_ms - prev_time_local_pos);
         local_pos_ned_svar_access_mtx.unlock();
@@ -473,7 +474,7 @@ void MavServer::handle_message(const mavlink_message_t *msg)
     case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
         svar_access_mtx.lock();
         mavlink_msg_global_position_int_decode(msg, &global_pos_int);
-        global_pos_int_isnew = true;
+        is_new_global_pos_int = true;
         svar_access_mtx.unlock();
         break;
     case MAVLINK_MSG_ID_ATTITUDE:
@@ -481,7 +482,7 @@ void MavServer::handle_message(const mavlink_message_t *msg)
         attnum++;
         attitude_svar_access_mtx.lock();
         mavlink_msg_attitude_decode(msg, &attitude);
-        attitude_isnew = true;
+        is_new_attitude = true;
         print_debug_mav("att_msg_time = %d\n",
                         attitude.time_boot_ms - prev_time_att);
         attitude_svar_access_mtx.unlock();
@@ -492,23 +493,23 @@ void MavServer::handle_message(const mavlink_message_t *msg)
 }
 
 using namespace gazebo;
-GZ_REGISTER_MODEL_PLUGIN(DroneCameraPlugin)
+GZ_REGISTER_MODEL_PLUGIN(GZSitlPlugin)
 
-DroneCameraPlugin::DroneCameraPlugin()
+GZSitlPlugin::GZSitlPlugin()
     : global_pos_coord_system(common::SphericalCoordinates::EARTH_WGS84),
       mavserver(MAVPROXY_PORT)
 {
-    this->model = NULL;
+    model = NULL;
 }
 
-DroneCameraPlugin::~DroneCameraPlugin()
+GZSitlPlugin::~GZSitlPlugin()
 {
-    event::Events::DisconnectWorldUpdateBegin(this->update_connection);
+    event::Events::DisconnectWorldUpdateBegin(update_connection);
 }
 
-void DroneCameraPlugin::OnUpdate()
+void GZSitlPlugin::OnUpdate()
 {
-    if (mavserver.heartbeat_is_time_to_send()) {
+    if (mavserver.is_time_to_send_heartbeat()) {
         mavserver.vehicle_send_our_heartbeat();
     }
 
@@ -537,7 +538,7 @@ void DroneCameraPlugin::OnUpdate()
     case INIT_AIRBORNE: {
 
         // Check if home position has already been received
-        if (mavserver.home_position_isnew) {
+        if (mavserver.is_new_home_position) {
             mavlink_home_position_t home = mavserver.get_svar_home_position();
             mavlink_global_position_int_t home_pos = home_pos_to_global(home);
             set_global_pos_coord_system(home_pos);
@@ -570,7 +571,7 @@ void DroneCameraPlugin::OnUpdate()
         bool is_flying = (hb.system_status == MAV_STATE_ACTIVE);
 
         // Wait until initial global position is achieved
-        if (!vehicle_ground_pos_locked()) {
+        if (!vehicle_is_ground_pos_locked()) {
             return;
         }
 
@@ -626,7 +627,7 @@ void DroneCameraPlugin::OnUpdate()
     case ACTIVE_AIRBORNE: {
 
         // Make sure the target still exists
-        if (!this->target) {
+        if (!target) {
             print_debug_state("Target not found.\n");
             simstate = ERROR;
             print_debug_state("state: ERROR\n");
@@ -638,7 +639,7 @@ void DroneCameraPlugin::OnUpdate()
         math::Vector3 curr_vel;
         math::Vector3 curr_ang_vel;
         static math::Pose tpose = math::Pose(math::Pose::Zero);
-        math::Pose tpose_new = this->target->GetWorldPose();
+        math::Pose tpose_new = target->GetWorldPose();
         if (vehicle_is_flying() && tpose_new != tpose) {
             tpose = tpose_new;
 
@@ -666,12 +667,12 @@ void DroneCameraPlugin::OnUpdate()
         }
 
         // Calculate pose according to new attitude and position
-        if (mavserver.local_pos_ned_isnew || mavserver.attitude_isnew) {
+        if (mavserver.is_new_local_pos_ned || mavserver.is_new_attitude) {
 
             // Set New Drone Pose in Gazebo
             calculate_pose(&curr_pose, mavserver.get_svar_attitude(),
                            mavserver.get_svar_local_pos_ned());
-            this->model->SetWorldPose(curr_pose);
+            model->SetWorldPose(curr_pose);
         }
 
         return;
@@ -685,20 +686,20 @@ void DroneCameraPlugin::OnUpdate()
     return;
 }
 
-void DroneCameraPlugin::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
+void GZSitlPlugin::Load(physics::ModelPtr m, sdf::ElementPtr sdf)
 {
 
     // Output the name of the model
     print_debug_state("The gzsitl plugin is attached to the model\n");
 
     // Store the model pointer for convenience
-    this->model = _model;
+    model = m;
 
     // Also store the target pointer
-    this->target = this->model->GetWorld()->GetModel(GZSITL_TARGET_MODEL_NAME);
+    target = model->GetWorld()->GetModel(GZSITL_TARGET_MODEL_NAME);
 
     // Run MavServer thread
-    this->mavserver.run();
+    mavserver.run();
 
     // Set initial simulation parameters
     printf("init\n");
@@ -706,11 +707,11 @@ void DroneCameraPlugin::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
     print_debug_state("state: INIT\n");
 
     // Listen to the update event
-    this->update_connection = event::Events::ConnectWorldUpdateBegin(
-        boost::bind(&DroneCameraPlugin::OnUpdate, this));
+    update_connection = event::Events::ConnectWorldUpdateBegin(
+        boost::bind(&GZSitlPlugin::OnUpdate, this));
 }
 
-bool DroneCameraPlugin::vehicle_is_flying()
+bool GZSitlPlugin::vehicle_is_flying()
 {
     static bool has_takenoff_once = false;
 
@@ -726,14 +727,14 @@ bool DroneCameraPlugin::vehicle_is_flying()
     return has_takenoff_once;
 }
 
-bool DroneCameraPlugin::vehicle_ground_pos_locked()
+bool GZSitlPlugin::vehicle_is_ground_pos_locked()
 {
     static int n = 0;
 
     // If vehicle is not airborne, receive Initial Position at least
     // INIT_POS_NUMSAMPLES times
     if (n < INIT_POS_NUMSAMPLES) {
-        if (mavserver.global_pos_int_isnew && mavserver.vehicle_is_ready()) {
+        if (mavserver.is_new_global_pos_int && mavserver.vehicle_is_ready()) {
             n++;
         }
         return false;
@@ -751,7 +752,7 @@ bool DroneCameraPlugin::vehicle_ground_pos_locked()
 }
 
 mavlink_global_position_int_t
-DroneCameraPlugin::home_pos_to_global(mavlink_home_position_t home)
+GZSitlPlugin::home_pos_to_global(mavlink_home_position_t home)
 {
     mavlink_global_position_int_t global_pos;
 
@@ -762,14 +763,14 @@ DroneCameraPlugin::home_pos_to_global(mavlink_home_position_t home)
     return global_pos;
 }
 
-math::Pose DroneCameraPlugin::coord_gzlocal_to_mavlocal(math::Pose gzpose)
+math::Pose GZSitlPlugin::coord_gzlocal_to_mavlocal(math::Pose gzpose)
 {
     return math::Pose(gzpose.pos.x, -gzpose.pos.y, -gzpose.pos.z,
                       gzpose.rot.GetRoll(), -gzpose.rot.GetPitch(),
                       -gzpose.rot.GetYaw());
 }
 
-void DroneCameraPlugin::set_global_pos_coord_system(
+void GZSitlPlugin::set_global_pos_coord_system(
     mavlink_global_position_int_t position)
 {
     ignition::math::Angle ref_lat =
@@ -784,10 +785,14 @@ void DroneCameraPlugin::set_global_pos_coord_system(
     global_pos_coord_system.SetLongitudeReference(ref_lon);
 }
 
-void DroneCameraPlugin::calculate_pose(
+void GZSitlPlugin::calculate_pose(
     math::Pose *pose, mavlink_attitude_t attitude,
     mavlink_local_position_ned_t local_position)
 {
-    pose->Set(local_position.x, -local_position.y, -local_position.z,
-              attitude.roll, -attitude.pitch, -attitude.yaw);
+    pose->Set(local_position.x,
+              -local_position.y,
+              -local_position.z,
+              attitude.roll,
+              -attitude.pitch,
+              -attitude.yaw);
 }

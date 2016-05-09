@@ -1,3 +1,19 @@
+/*
+// Copyright (c) 2016 Intel Corporation 
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+*/
+
 #ifndef _DRONE_CAMERA_PLUGIN_HH_
 #define _DRONE_CAMERA_PLUGIN_HH_
 
@@ -18,9 +34,9 @@ class MavServer
 
     // Helpers
     void run();
-    bool heartbeat_is_time_to_send();
-    mavlink_mission_item_t pose_to_waypoint_relative_alt(double x, double y,
-                                                         double z, double yaw);
+    bool is_time_to_send_heartbeat();
+    mavlink_mission_item_t
+    pose_to_waypoint_relative_alt(double x, double y, double z, double yaw);
 
     // Vehicle Communication
     bool vehicle_is_ready();
@@ -36,13 +52,13 @@ class MavServer
                                          int timeout);
 
     // State Variables
-    bool attitude_isnew;
-    bool heartbeat_isnew;
-    bool command_ack_isnew;
-    bool gps_raw_int_isnew;
-    bool local_pos_ned_isnew;
-    bool home_position_isnew;
-    bool global_pos_int_isnew;
+    bool is_new_attitude = false;
+    bool is_new_heartbeat = false;
+    bool is_new_command_ack = false;
+    bool is_new_gps_raw_int = false;
+    bool is_new_local_pos_ned = false;
+    bool is_new_home_position = false;
+    bool is_new_global_pos_int = false;
     mavlink_attitude_t get_svar_attitude();
     mavlink_heartbeat_t get_svar_heartbeat();
     mavlink_command_ack_t get_svar_command_ack();
@@ -53,7 +69,7 @@ class MavServer
 
   private:
     // Threading
-    bool send_recv_thread_run;
+    bool send_recv_thread_run = false;
     std::thread send_recv_thread;
 
     std::mutex svar_access_mtx;
@@ -62,12 +78,12 @@ class MavServer
     std::mutex local_pos_ned_svar_access_mtx;
 
     // Vehicle Communication
-    int sock;
+    int sock = 0;
     socklen_t fromlen;
     struct sockaddr_in local_addr;
     struct sockaddr_in remote_addr;
 
-    int data_to_send_len;
+    int data_to_send_len = 0;
     enum { BUFFER_LEN = 2041 };
     uint8_t data_recv[BUFFER_LEN];
     uint8_t data_to_send[BUFFER_LEN];
@@ -78,31 +94,30 @@ class MavServer
     void handle_message(const mavlink_message_t *msg);
 
     // State Variables
-    mavlink_attitude_t attitude;
-    mavlink_heartbeat_t heartbeat;
-    mavlink_command_ack_t command_ack;
-    mavlink_gps_raw_int_t gps_raw_int;
-    mavlink_home_position_t home_position;
-    mavlink_local_position_ned_t local_pos_ned;
-    mavlink_global_position_int_t global_pos_int;
+    mavlink_attitude_t attitude = {0};
+    mavlink_heartbeat_t heartbeat = {0};
+    mavlink_command_ack_t command_ack = {0};
+    mavlink_gps_raw_int_t gps_raw_int = {0};
+    mavlink_home_position_t home_position = {0};
+    mavlink_local_position_ned_t local_pos_ned = {0};
+    mavlink_global_position_int_t global_pos_int = {0};
 };
 
 namespace gazebo
 {
 
-class GAZEBO_VISIBLE DroneCameraPlugin : public ModelPlugin
+class GAZEBO_VISIBLE GZSitlPlugin : public ModelPlugin
 {
 
   public:
-    DroneCameraPlugin();
-    virtual ~DroneCameraPlugin();
+    GZSitlPlugin();
+    virtual ~GZSitlPlugin();
 
     void OnUpdate();
     virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
 
   private:
     // Simulation State
-    int simstate;
     enum sim_state {
         INIT,
         INIT_ON_GROUND,
@@ -111,10 +126,11 @@ class GAZEBO_VISIBLE DroneCameraPlugin : public ModelPlugin
         ACTIVE_ON_GROUND,
         ERROR
     };
+    sim_state simstate = INIT;
 
     // Vehicle Status
     bool vehicle_is_flying();
-    bool vehicle_ground_pos_locked();
+    bool vehicle_is_ground_pos_locked();
 
     // Coordinates
     mavlink_global_position_int_t init_global_pos;
