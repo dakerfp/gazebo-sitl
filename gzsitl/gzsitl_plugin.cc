@@ -14,6 +14,8 @@
 // limitations under the License.
 */
 
+#include <fcntl.h>
+#include <arpa/inet.h>
 #include "gzsitl_plugin.hh"
 
 // TODO: Set as .sdf plugin parameters 

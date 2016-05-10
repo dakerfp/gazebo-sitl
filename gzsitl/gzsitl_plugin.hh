@@ -14,15 +14,12 @@
 // limitations under the License.
 */
 
-#ifndef _DRONE_CAMERA_PLUGIN_HH_
-#define _DRONE_CAMERA_PLUGIN_HH_
+#ifndef _GZSITL_PLUGIN_HH_
+#define _GZSITL_PLUGIN_HH_
 
 #include <thread>
-#include <mutex>
 #include <mavlink.h>
 #include <sys/socket.h>
-#include <mavlink_types.h>
-#include <gazebo/gazebo.hh>
 #include <gazebo/common/common.hh>
 #include <gazebo/physics/physics.hh>
 
