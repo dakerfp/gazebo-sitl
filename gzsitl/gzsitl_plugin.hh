@@ -31,7 +31,6 @@ class MavServer
 
     // Helpers
     void run();
-    bool is_time_to_send_heartbeat();
     mavlink_mission_item_t
     pose_to_waypoint_relative_alt(double x, double y, double z, double yaw);
 
@@ -39,14 +38,14 @@ class MavServer
     bool vehicle_is_ready();
     int vehicle_get_status();
     bool vehicle_set_mode_guided();
-    void vehicle_send_our_heartbeat();
-    void vehicle_send_data(const uint8_t *data, int data_len);
-    void vehicle_send_cmd_long(mavlink_command_long_t mav_cmd);
-    void vehicle_send_waypoint(mavlink_mission_item_t mav_waypoint);
+    void vehicle_queue_send_heartbeat_if_needed();
+    void vehicle_queue_send_data(const uint8_t *data, int data_len);
+    void vehicle_queue_send_cmd_long(mavlink_command_long_t mav_cmd);
+    void vehicle_queue_send_waypoint(mavlink_mission_item_t mav_waypoint);
     bool vehicle_cmd_long_ack_recvd(int mav_cmd_id, int mav_result_expected);
-    bool vehicle_send_cmd_long_until_ack(int cmd, float p1, float p2, float p3,
-                                         float p4, float p5, float p6, float p7,
-                                         int timeout);
+    bool vehicle_queue_send_cmd_long_until_ack(int cmd, float p1, float p2,
+                                               float p3, float p4, float p5,
+                                               float p6, float p7, int timeout);
 
     // State Variables
     bool is_new_attitude = false;
