@@ -25,18 +25,17 @@
 #define MAVPROXY_IP "127.0.0.1"
 #define MAVPROXY_PORT 14556
 #define LOCAL_PORT 14550
-#define DEFAULT_TARGET_COMPONENT_ID 0
-#define DEFAULT_TARGET_SYSTEM_ID 1
-#define DEFAULT_SYSTEM_ID 1
+#define DEFAULT_TARGET_SYSTEM_ID 1          // Default Copter system ID
+#define DEFAULT_TARGET_COMPONENT_ID 1       // Default Copter component ID
+#define DEFAULT_SYSTEM_ID 22                // This system ID
+#define DEFAULT_COMPONENT_ID 0              // This component ID
 #define HEARTBEAT_SEND_INTERVAL_MS 1000
-#define CMD_ACK_CHECK_INTERVAL_US 200000
-#define CMD_ACK_CHECK_MAXTIME_MS 3000
 #define INIT_POS_NUMSAMPLES 3
 #define TAKEOFF_AUTO true
 #define TAKEOFF_INIT_ALT_M 0.5
-#define HOME_POSITION_REQUEST_INTERVAL_MS 500
-#define MODE_SET_REQUEST_INTERVAL_MS 500
-#define TAKEOFF_REQUEST_INTERVAL_MS 500
+#define HOME_POSITION_REQUEST_INTERVAL_MS 3000
+#define MODE_SET_REQUEST_INTERVAL_MS 3000
+#define TAKEOFF_REQUEST_INTERVAL_MS 3000
 
 #if DEBUG_MAVLINK
 #define print_debug_mav(...) printf(__VA_ARGS__)
@@ -160,7 +159,7 @@ bool MavServer::vehicle_set_mode_guided()
         mav_cmd_set_mode.custom_mode = 4; // GUIDED == 4
 
         mavlink_msg_set_mode_encode(DEFAULT_SYSTEM_ID,
-                                    DEFAULT_TARGET_COMPONENT_ID, &mav_msg,
+                                    DEFAULT_COMPONENT_ID, &mav_msg,
                                     &mav_cmd_set_mode);
 
         int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
@@ -199,13 +198,13 @@ void MavServer::vehicle_queue_send_heartbeat_if_needed()
     mavlink_heartbeat_t mav_heartbeat;
     static uint8_t mav_data_buffer[BUFFER_LEN];
 
-    heartbeat.type = MAV_TYPE_GCS;
-    heartbeat.autopilot = MAV_AUTOPILOT_INVALID;
-    heartbeat.base_mode = 0;
-    heartbeat.custom_mode = 0;
-    heartbeat.system_status = MAV_STATE_ACTIVE;
+    mav_heartbeat.type = MAV_TYPE_GCS;
+    mav_heartbeat.autopilot = MAV_AUTOPILOT_INVALID;
+    mav_heartbeat.base_mode = 0;
+    mav_heartbeat.custom_mode = 0;
+    mav_heartbeat.system_status = MAV_STATE_ACTIVE;
 
-    mavlink_msg_heartbeat_encode(DEFAULT_SYSTEM_ID, DEFAULT_TARGET_COMPONENT_ID,
+    mavlink_msg_heartbeat_encode(DEFAULT_SYSTEM_ID, DEFAULT_COMPONENT_ID,
                                  &mav_msg, &mav_heartbeat);
 
     int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
@@ -237,7 +236,7 @@ void MavServer::vehicle_queue_send_cmd_long(mavlink_command_long_t cmd)
     static uint8_t mav_data_buffer[BUFFER_LEN];
 
     mavlink_msg_command_long_encode(
-        DEFAULT_SYSTEM_ID, DEFAULT_TARGET_COMPONENT_ID, &mav_msg, &cmd);
+        DEFAULT_SYSTEM_ID, DEFAULT_COMPONENT_ID, &mav_msg, &cmd);
 
     int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
     vehicle_queue_send_data(mav_data_buffer, n);
@@ -251,7 +250,7 @@ void MavServer::vehicle_queue_send_waypoint(mavlink_mission_item_t mav_waypoint)
     mav_waypoint.current = 2; // Set as a Guided waypoint
 
     mavlink_msg_mission_item_encode(DEFAULT_SYSTEM_ID,
-                                    DEFAULT_TARGET_COMPONENT_ID, &mav_msg,
+                                    DEFAULT_COMPONENT_ID, &mav_msg,
                                     &mav_waypoint);
 
     int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
@@ -429,10 +428,18 @@ void MavServer::handle_recv()
         print_debug_mav("%02x ", (unsigned char)data_recv[i]);
         
         if (mavlink_parse_char(MAVLINK_COMM_0, data_recv[i], &msg, &status)) {
+
+            // Do not handle unexpected mavlink messages 
+            if (msg.sysid != DEFAULT_TARGET_SYSTEM_ID ||
+                msg.compid != DEFAULT_TARGET_COMPONENT_ID) {
+                continue;
+            }
+
             print_debug_mav("\nReceived packet: CHK: %d, MGC: %d, SYS: %d, "
                             "COMP: %d, LEN: %d, MSG ID: %d, SEQ: %d\n",
                             msg.checksum, msg.magic, msg.sysid, msg.compid,
                             msg.len, msg.msgid, msg.seq);
+
             handle_message(&msg);
         }
     }
