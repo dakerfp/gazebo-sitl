@@ -35,15 +35,15 @@ class MavServer
     pose_to_waypoint_relative_alt(double x, double y, double z, double yaw);
 
     // Vehicle Communication
-    bool vehicle_is_ready();
-    int vehicle_get_status();
-    bool vehicle_set_mode_guided();
-    void vehicle_queue_send_heartbeat_if_needed();
-    void vehicle_queue_send_data(const uint8_t *data, int data_len);
-    void vehicle_queue_send_cmd_long(mavlink_command_long_t mav_cmd);
-    void vehicle_queue_send_waypoint(mavlink_mission_item_t mav_waypoint);
-    bool vehicle_cmd_long_ack_recvd(int mav_cmd_id, int mav_result_expected);
-    bool vehicle_queue_send_cmd_long_until_ack(int cmd, float p1, float p2,
+    bool is_ready();
+    int get_status();
+    bool set_mode_guided();
+    void queue_send_heartbeat_if_needed();
+    void queue_send_data(const uint8_t *data, int data_len);
+    void queue_send_cmd_long(mavlink_command_long_t mav_cmd);
+    void queue_send_waypoint(mavlink_mission_item_t mav_waypoint);
+    bool cmd_long_ack_recvd(int mav_cmd_id, int mav_result_expected);
+    bool queue_send_cmd_long_until_ack(int cmd, float p1, float p2,
                                                float p3, float p4, float p5,
                                                float p6, float p7, int timeout);
 
@@ -125,8 +125,8 @@ class GAZEBO_VISIBLE GZSitlPlugin : public ModelPlugin
     sim_state simstate = INIT;
 
     // Vehicle Status
-    bool vehicle_is_flying();
-    bool vehicle_is_ground_pos_locked();
+    bool is_flying();
+    bool is_ground_pos_locked();
 
     // Coordinates
     mavlink_global_position_int_t init_global_pos;

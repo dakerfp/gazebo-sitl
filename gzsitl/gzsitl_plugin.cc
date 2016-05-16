@@ -120,7 +120,7 @@ MavServer::pose_to_waypoint_relative_alt(double x, double y, double z, double ya
     return mav_waypoint;
 }
 
-bool MavServer::vehicle_is_ready()
+bool MavServer::is_ready()
 {
     // Check if GPS is locked and if system status is OK
     mavlink_heartbeat_t status = get_svar_heartbeat();
@@ -130,13 +130,13 @@ bool MavServer::vehicle_is_ready()
                                  status.system_status == MAV_STATE_ACTIVE);
 }
 
-int MavServer::vehicle_get_status()
+int MavServer::get_status()
 {
     mavlink_heartbeat_t status = get_svar_heartbeat();
     return status.system_status;
 }
 
-bool MavServer::vehicle_set_mode_guided()
+bool MavServer::set_mode_guided()
 {
     using namespace std::chrono;
 
@@ -163,7 +163,7 @@ bool MavServer::vehicle_set_mode_guided()
                                     &mav_cmd_set_mode);
 
         int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
-        vehicle_queue_send_data(mav_data_buffer, n);
+        queue_send_data(mav_data_buffer, n);
 
         send_time = curr_time;
 
@@ -171,7 +171,7 @@ bool MavServer::vehicle_set_mode_guided()
     }
 
     // Check if mode has changed and ACK has been received
-    if (vehicle_cmd_long_ack_recvd(MAVLINK_MSG_ID_SET_MODE,
+    if (cmd_long_ack_recvd(MAVLINK_MSG_ID_SET_MODE,
                                    MAV_RESULT_ACCEPTED)) {
         return true;
     }
@@ -179,7 +179,7 @@ bool MavServer::vehicle_set_mode_guided()
     return false;
 }
 
-void MavServer::vehicle_queue_send_heartbeat_if_needed()
+void MavServer::queue_send_heartbeat_if_needed()
 {
 
     using namespace std::chrono;
@@ -208,12 +208,12 @@ void MavServer::vehicle_queue_send_heartbeat_if_needed()
                                  &mav_msg, &mav_heartbeat);
 
     int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
-    vehicle_queue_send_data(mav_data_buffer, n);
+    queue_send_data(mav_data_buffer, n);
 
     last_hb_sendtime = curr_time;
 }
 
-void MavServer::vehicle_queue_send_data(const uint8_t *data, int data_len)
+void MavServer::queue_send_data(const uint8_t *data, int data_len)
 {
 
     data_to_send_access_mtx.lock();
@@ -230,7 +230,7 @@ void MavServer::vehicle_queue_send_data(const uint8_t *data, int data_len)
     data_to_send_access_mtx.unlock();
 }
 
-void MavServer::vehicle_queue_send_cmd_long(mavlink_command_long_t cmd)
+void MavServer::queue_send_cmd_long(mavlink_command_long_t cmd)
 {
     mavlink_message_t mav_msg;
     static uint8_t mav_data_buffer[BUFFER_LEN];
@@ -239,10 +239,10 @@ void MavServer::vehicle_queue_send_cmd_long(mavlink_command_long_t cmd)
         DEFAULT_SYSTEM_ID, DEFAULT_COMPONENT_ID, &mav_msg, &cmd);
 
     int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
-    vehicle_queue_send_data(mav_data_buffer, n);
+    queue_send_data(mav_data_buffer, n);
 }
 
-void MavServer::vehicle_queue_send_waypoint(mavlink_mission_item_t mav_waypoint)
+void MavServer::queue_send_waypoint(mavlink_mission_item_t mav_waypoint)
 {
     mavlink_message_t mav_msg;
     static uint8_t mav_data_buffer[BUFFER_LEN];
@@ -254,10 +254,10 @@ void MavServer::vehicle_queue_send_waypoint(mavlink_mission_item_t mav_waypoint)
                                     &mav_waypoint);
 
     int n = mavlink_msg_to_send_buffer(mav_data_buffer, &mav_msg);
-    vehicle_queue_send_data(mav_data_buffer, n);
+    queue_send_data(mav_data_buffer, n);
 }
 
-bool MavServer::vehicle_cmd_long_ack_recvd(int mav_cmd_id,
+bool MavServer::cmd_long_ack_recvd(int mav_cmd_id,
                                            int mav_result_expected)
 {
     if (!is_new_command_ack) {
@@ -270,7 +270,7 @@ bool MavServer::vehicle_cmd_long_ack_recvd(int mav_cmd_id,
            (cmd_ack.result == mav_result_expected);
 }
 
-bool MavServer::vehicle_queue_send_cmd_long_until_ack(int cmd, float p1, float p2,
+bool MavServer::queue_send_cmd_long_until_ack(int cmd, float p1, float p2,
                                                 float p3, float p4, float p5,
                                                 float p6, float p7, int timeout)
 {
@@ -298,7 +298,7 @@ bool MavServer::vehicle_queue_send_cmd_long_until_ack(int cmd, float p1, float p
         mav_cmd.param6 = p6;
         mav_cmd.param7 = p7;
 
-        vehicle_queue_send_cmd_long(mav_cmd);
+        queue_send_cmd_long(mav_cmd);
         send_time[cmd] = curr_time;
 
         switch (cmd) {
@@ -316,7 +316,7 @@ bool MavServer::vehicle_queue_send_cmd_long_until_ack(int cmd, float p1, float p
         }
     }
 
-    if (vehicle_cmd_long_ack_recvd(cmd, MAV_RESULT_ACCEPTED)) {
+    if (cmd_long_ack_recvd(cmd, MAV_RESULT_ACCEPTED)) {
         return true;
     }
 
@@ -521,21 +521,21 @@ GZSitlPlugin::~GZSitlPlugin()
 
 void GZSitlPlugin::OnUpdate()
 {
-    mavserver.vehicle_queue_send_heartbeat_if_needed();
+    mavserver.queue_send_heartbeat_if_needed();
 
     // Execute according to simulation state
     switch (simstate) {
 
     case INIT: {
 
-        if (!mavserver.vehicle_is_ready()) {
+        if (!mavserver.is_ready()) {
             return;
         }
 
-        if (mavserver.vehicle_get_status() == MAV_STATE_STANDBY) {
+        if (mavserver.get_status() == MAV_STATE_STANDBY) {
             simstate = INIT_ON_GROUND;
             print_debug_state("state: INIT_ON_GROUND\n");
-        } else if (mavserver.vehicle_get_status() == MAV_STATE_ACTIVE) {
+        } else if (mavserver.get_status() == MAV_STATE_ACTIVE) {
             simstate = INIT_AIRBORNE;
             print_debug_state("state: INIT_AIRBORNE\n");
         }
@@ -557,7 +557,7 @@ void GZSitlPlugin::OnUpdate()
 
         // Home position is critical. Request home position every
         // HOME_POSITION_REQUEST_INTERVAL_MS ms until it receiv
-        mavserver.vehicle_queue_send_cmd_long_until_ack(
+        mavserver.queue_send_cmd_long_until_ack(
             MAV_CMD_GET_HOME_POSITION, 0, 0, 0, 0, 0, 0, 0,
             HOME_POSITION_REQUEST_INTERVAL_MS);
 
@@ -572,7 +572,7 @@ void GZSitlPlugin::OnUpdate()
         bool is_armed = hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
 
         // Wait until initial global position is achieved
-        if (!vehicle_is_ground_pos_locked()) {
+        if (!is_ground_pos_locked()) {
             return;
         }
 
@@ -584,19 +584,19 @@ void GZSitlPlugin::OnUpdate()
         }
 
         if (!is_guided) {
-            mavserver.vehicle_set_mode_guided();
+            mavserver.set_mode_guided();
             return;
         }
 
         if (!is_armed) {
-            mavserver.vehicle_queue_send_cmd_long_until_ack(
+            mavserver.queue_send_cmd_long_until_ack(
                 MAV_CMD_COMPONENT_ARM_DISARM, 1, 0, 0, 0, 0, 0, 0,
                 TAKEOFF_REQUEST_INTERVAL_MS);
             return;
         }
 
-        if (!vehicle_is_flying()) {
-            mavserver.vehicle_queue_send_cmd_long_until_ack(
+        if (!is_flying()) {
+            mavserver.queue_send_cmd_long_until_ack(
                 MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, TAKEOFF_INIT_ALT_M,
                 TAKEOFF_REQUEST_INTERVAL_MS);
             return;
@@ -626,7 +626,7 @@ void GZSitlPlugin::OnUpdate()
         math::Vector3 curr_ang_vel;
         static math::Pose tpose = math::Pose(math::Pose::Zero);
         math::Pose tpose_new = target->GetWorldPose();
-        if (vehicle_is_flying() && tpose_new != tpose) {
+        if (is_flying() && tpose_new != tpose) {
             tpose = tpose_new;
 
             // Convert from Gazebo Local Coordinates to Mav Local NED
@@ -646,7 +646,7 @@ void GZSitlPlugin::OnUpdate()
                              global_pos_coord_system.GetElevationReference();
 
             // Send target coordinates through mavlink
-            mavserver.vehicle_queue_send_waypoint(
+            mavserver.queue_send_waypoint(
                 mavserver.pose_to_waypoint_relative_alt(
                     global_coord.x, global_coord.y, global_coord.z,
                     pose_mavlocal.rot.GetYaw()));
@@ -697,20 +697,20 @@ void GZSitlPlugin::Load(physics::ModelPtr m, sdf::ElementPtr sdf)
         boost::bind(&GZSitlPlugin::OnUpdate, this));
 }
 
-bool GZSitlPlugin::vehicle_is_flying()
+bool GZSitlPlugin::is_flying()
 {
     mavlink_heartbeat_t status = mavserver.get_svar_heartbeat();
     return status.system_status == MAV_STATE_ACTIVE;
 }
 
-bool GZSitlPlugin::vehicle_is_ground_pos_locked()
+bool GZSitlPlugin::is_ground_pos_locked()
 {
     static int n = 0;
 
     // If vehicle is not airborne, receive Initial Position at least
     // INIT_POS_NUMSAMPLES times
     if (n < INIT_POS_NUMSAMPLES) {
-        if (mavserver.is_new_global_pos_int && mavserver.vehicle_is_ready()) {
+        if (mavserver.is_new_global_pos_int && mavserver.is_ready()) {
             n++;
         }
         return false;
