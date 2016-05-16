@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2016 Intel Corporation 
+// Copyright (c) 2016 Intel Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,17 +18,17 @@
 #include <arpa/inet.h>
 #include "gzsitl_plugin.hh"
 
-// TODO: Set as .sdf plugin parameters 
+// TODO: Set as .sdf plugin parameters
 #define DEBUG_STATE true
 #define DEBUG_MAVLINK false
 #define GZSITL_TARGET_MODEL_NAME "gzsitl_target"
 #define MAVPROXY_IP "127.0.0.1"
 #define MAVPROXY_PORT 14556
 #define LOCAL_PORT 14550
-#define DEFAULT_TARGET_SYSTEM_ID 1          // Default Copter system ID
-#define DEFAULT_TARGET_COMPONENT_ID 1       // Default Copter component ID
-#define DEFAULT_SYSTEM_ID 22                // This system ID
-#define DEFAULT_COMPONENT_ID 0              // This component ID
+#define DEFAULT_TARGET_SYSTEM_ID 1    // Default Copter system ID
+#define DEFAULT_TARGET_COMPONENT_ID 1 // Default Copter component ID
+#define DEFAULT_SYSTEM_ID 22          // This system ID
+#define DEFAULT_COMPONENT_ID 0        // This component ID
 #define HEARTBEAT_SEND_INTERVAL_MS 1000
 #define INIT_POS_NUMSAMPLES 3
 #define TAKEOFF_AUTO true
@@ -46,12 +46,12 @@
 #if DEBUG_STATE
 #define print_debug_state(...) printf(__VA_ARGS__)
 #else
-#define print_debug_state(...) ; 
+#define print_debug_state(...) ;
 #endif
 
 MavServer::MavServer(short port)
 {
-    
+
     // Socket Initialization
     sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if(sock == -1) {
@@ -166,7 +166,7 @@ bool MavServer::vehicle_set_mode_guided()
         vehicle_queue_send_data(mav_data_buffer, n);
 
         send_time = curr_time;
-        
+
         print_debug_state("Changing to GUIDED mode...\n");
     }
 
@@ -184,7 +184,7 @@ void MavServer::vehicle_queue_send_heartbeat_if_needed()
 
     using namespace std::chrono;
     time_point<system_clock> curr_time = system_clock::now();
-    
+
     static time_point<system_clock> last_hb_sendtime = curr_time;
 
     int time_elapsed =
@@ -399,13 +399,13 @@ void MavServer::send_recv()
 void MavServer::handle_send()
 {
     data_to_send_access_mtx.lock();
-   
+
     if (data_to_send_len > 0) {
         sendto(sock, (void *)data_to_send, data_to_send_len, 0,
                (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
         data_to_send_len = 0;
     }
-  
+
     data_to_send_access_mtx.unlock();
 }
 
@@ -423,13 +423,13 @@ void MavServer::handle_recv()
     }
 
     print_debug_mav("Bytes Received: %d\nDatagram: ", (int)bytes_recvd);
-  
+
     for (unsigned int i = 0; i < bytes_recvd; ++i) {
         print_debug_mav("%02x ", (unsigned char)data_recv[i]);
-        
+
         if (mavlink_parse_char(MAVLINK_COMM_0, data_recv[i], &msg, &status)) {
 
-            // Do not handle unexpected mavlink messages 
+            // Do not handle unexpected mavlink messages
             if (msg.sysid != DEFAULT_TARGET_SYSTEM_ID ||
                 msg.compid != DEFAULT_TARGET_COMPONENT_ID) {
                 continue;
@@ -443,7 +443,7 @@ void MavServer::handle_recv()
             handle_message(&msg);
         }
     }
-   
+
     print_debug_mav("\n");
 }
 
