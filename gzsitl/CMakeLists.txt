@@ -20,7 +20,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/build/lib)
 link_directories(
     ${GAZEBO_LIBRARY_DIRS})
-set(CUSTOM_COMPILE_FLAGS "-g -Wall")
+set(CUSTOM_COMPILE_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS} ${CUSTOM_COMPILE_FLAGS}")
 
