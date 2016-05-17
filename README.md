@@ -16,7 +16,6 @@ once with:
     git submodule init
     git submodule update
     ```
-
 2. Create a build folder and make using CMAKE as follows:
 
     ```
@@ -61,9 +60,25 @@ once with:
 3. Set environment variables and open the Gazebo gzsitl_drone_target world file with the following command:
 
     ```
-    GAZEBO_PLUGIN_PATH=${GAZEBO_PLUGIN_PATH}:${PWD}/gzsitl/build GAZEBO_MODEL_PATH=${GAZEBO_MODEL_PATH}:${PWD}/models gazebo ./world/gzsitl_drone_target.world
+    GAZEBO_PLUGIN_PATH=${GAZEBO_PLUGIN_PATH}:${PWD}/gzsitl/build GAZEBO_MODEL_PATH=${GAZEBO_MODEL_PATH}:${PWD}/models gazebo ./world/gzsitl_drone_target.world --verbose
     ```
 
 ## Interaction ##
 
-The default behavior of the drone is to follow the transparent sphere wherever it goes.
+The Plugin first detects if the vehicle being simulated on SITL is Landed or
+already Airborne.
+ - If Landed, store the initial position as home, set flight mode as guided
+   and request take-off.
+ - If Airborne, request home position, and keep the current flight mode.
+
+When Airborne, the vehicle follows the transparent sphere (target).
+
+## Throubleshooting ##
+
+Gazebo might fail to open if the needed models or plugins are not found. If
+that happens, make sure the environment variable GAZEBO_PLUGIN_PATH is
+correctly pointing to the [build](#build) folder and that the environment
+variable GAZEBO_MODEL_PATH is pointing to the models folder. The Gazebo
+--verbose terminal output is useful for determining wether a plugin or a models
+has not not been found.
+
